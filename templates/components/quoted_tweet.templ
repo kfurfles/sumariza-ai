@@ -1,0 +1,23 @@
+package components
+
+import "sumariza-ai/internal/domain"
+
+func formatQuoteHandle(handle string) string {
+	return "@" + handle
+}
+
+templ QuotedTweet(quote *domain.QuotedTweet) {
+	<div class="mt-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+		<div class="flex items-center gap-2 mb-2">
+			if quote.Author.Name != "" {
+				<span class="font-medium text-gray-900 text-sm">{ quote.Author.Name }</span>
+			} else {
+				<span class="font-medium text-gray-300 text-sm">Name unavailable</span>
+			}
+			if quote.Author.Handle != "" {
+				<span class="text-gray-500 text-sm">{ formatQuoteHandle(quote.Author.Handle) }</span>
+			}
+		</div>
+		<p class="text-gray-700 text-sm">{ quote.Text }</p>
+	</div>
+}

@@ -1,0 +1,40 @@
+package pages
+
+import "sumariza-ai/templates/layouts"
+import "sumariza-ai/templates/components"
+
+// TweetViewWithSkeleton renders skeleton immediately, HTMX loads content.
+// Used for direct URL access (domain swap).
+templ TweetViewWithSkeleton(username, tweetID string) {
+	@layouts.Base("Sumariza AI") {
+		<main class="max-w-2xl mx-auto px-4 py-16">
+			<div
+				id="tweet-content"
+				hx-get={ "/api/tweet/" + username + "/" + tweetID }
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				@components.Skeleton()
+				
+				<div
+					id="loading-message"
+					class="text-center text-gray-500 mt-4 hidden"
+				>
+					Ainda carregando...
+				</div>
+			</div>
+		</main>
+		
+		<script>
+			// Show "still loading" message after 10 seconds
+			setTimeout(() => {
+				const msg = document.getElementById('loading-message');
+				const content = document.getElementById('tweet-content');
+				if (msg && content && content.querySelector('.animate-pulse')) {
+					msg.classList.remove('hidden');
+				}
+			}, 10000);
+		</script>
+	}
+}
+

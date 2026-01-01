@@ -1,0 +1,18 @@
+# Twitter CSS selectors - update when Twitter changes their HTML
+# Hot-reloadable without server restart
+
+tweet:
+  container: "article[data-testid='tweet']"
+  text: "[data-testid='tweetText']"
+  timestamp: "time"
+
+author:
+  name: "[data-testid='User-Name'] span"
+  handle: "[data-testid='User-Name'] a[href*='/']"
+  avatar: "img[data-testid='Tweet-User-Avatar']"
+  verified_badge: "[data-testid='icon-verified']"
+
+quote:
+  container: "[data-testid='quoteTweet']"
+  text: "[data-testid='quoteTweet'] [data-testid='tweetText']"
+

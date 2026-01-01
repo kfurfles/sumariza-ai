@@ -1,0 +1,12 @@
+package partials
+
+import (
+	"sumariza-ai/internal/domain"
+	"sumariza-ai/templates/components"
+)
+
+// TweetContent is the HTMX swap target for rendering tweet content.
+templ TweetContent(tweet *domain.Tweet) {
+	@components.TweetCard(tweet)
+}
+

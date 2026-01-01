@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  sumariza:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - SERVER_URL=http://localhost:3000
+      - CACHE_TTL_MINUTES=5
+    volumes:
+      - ./config:/app/config:ro  # Hot-reload selectors
+    restart: unless-stopped
+    # Resource limits for Chrome
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+

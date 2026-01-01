@@ -1,0 +1,107 @@
+package components
+
+import (
+	"sumariza-ai/internal/domain"
+	"regexp"
+	"html"
+	"strings"
+)
+
+// formatTweetText converts link markers [[LINK:URL]] to clickable links.
+// This handles the full URLs preserved from Twitter's href attributes.
+func formatTweetText(text string) string {
+	// First, process our link markers before escaping HTML
+	// Extract all [[LINK:URL]] markers and store them
+	linkRegex := regexp.MustCompile(`\[\[LINK:([^\]]+)\]\]`)
+	
+	// Find all links and replace with placeholders
+	links := linkRegex.FindAllStringSubmatch(text, -1)
+	placeholders := make(map[string]string)
+	
+	for i, match := range links {
+		if len(match) >= 2 {
+			placeholder := "___LINK_PLACEHOLDER_" + string(rune('A'+i)) + "___"
+			url := match[1]
+			placeholders[placeholder] = url
+			text = strings.Replace(text, match[0], placeholder, 1)
+		}
+	}
+	
+	// Now escape HTML for safety
+	escaped := html.EscapeString(text)
+	
+	// Replace placeholders with actual links
+	for placeholder, url := range placeholders {
+		displayURL := truncateURL(url, 40)
+		linkHTML := `<a href="` + html.EscapeString(url) + `" class="text-blue-500 hover:underline" target="_blank" rel="noopener noreferrer">` + html.EscapeString(displayURL) + `</a>`
+		escaped = strings.Replace(escaped, placeholder, linkHTML, 1)
+	}
+	
+	return escaped
+}
+
+// truncateURL shortens a URL for display while keeping the full URL in href.
+func truncateURL(url string, maxLen int) string {
+	// Remove protocol for display
+	display := url
+	display = strings.TrimPrefix(display, "https://")
+	display = strings.TrimPrefix(display, "http://")
+	
+	if len(display) > maxLen {
+		return display[:maxLen-1] + "..."
+	}
+	return display
+}
+
+// sumarizaURL returns the Sumariza URL for sharing the clean view.
+func sumarizaURL(tweet *domain.Tweet) string {
+	return "https://sumariza-ai.com/" + tweet.Username + "/status/" + tweet.ID
+}
+
+templ TweetCard(tweet *domain.Tweet) {
+	<article class="tweet-card bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+		@AuthorInfo(tweet.Author, tweet.Partial)
+		
+		<div
+			class="tweet-content mt-4 text-xl leading-relaxed font-serif whitespace-pre-line"
+			dir={ string(tweet.Content.Direction) }
+		>
+			@templ.Raw(formatTweetText(tweet.Content.Text))
+		</div>
+		
+		if tweet.Content.QuotedTweet != nil {
+			@QuotedTweet(tweet.Content.QuotedTweet)
+		}
+		
+		<div class="mt-4 text-sm text-gray-500">
+			if !tweet.Content.CreatedAt.IsZero() {
+				<time datetime={ tweet.Content.CreatedAt.Format("2006-01-02T15:04:05Z") }>
+					{ tweet.Content.CreatedAt.Format("3:04 PM · Jan 2, 2006") }
+				</time>
+			} else {
+				<span class="text-gray-300">Date unavailable</span>
+			}
+		</div>
+		
+		<div class="mt-6 pt-4 border-t border-gray-100 flex gap-4">
+			<button
+				id="copy-link-btn"
+				onclick={ copyToClipboard(sumarizaURL(tweet)) }
+				class="px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg text-sm cursor-pointer"
+			>
+				Copy Link
+			</button>
+		</div>
+	</article>
+}
+
+script copyToClipboard(url string) {
+	navigator.clipboard.writeText(url);
+	const btn = document.getElementById('copy-link-btn');
+	const originalText = btn.textContent;
+	btn.textContent = 'Copiado!';
+	setTimeout(() => {
+		btn.textContent = originalText;
+	}, 2000);
+}
+

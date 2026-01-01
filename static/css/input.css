@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* System serif stack for tweet content - no external fonts */
+.tweet-content {
+    font-family: Georgia, 'Times New Roman', Times, serif;
+}
+
+/* URLs are clickable and blue */
+.tweet-content a {
+    color: #1d9bf0;
+}
+
+/* Mentions and hashtags render as plain text (no special styling) */
+
