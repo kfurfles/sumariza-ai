@@ -1,4 +1,4 @@
-# Deploy workflow - triggered on version tags
+# Deploy workflow - triggered on version tags or manual dispatch
 # Builds the application and deploys to VPS via SSH
 
 name: Deploy
@@ -7,6 +7,15 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
 
 env:
   DEPLOY_PATH: /var/www/sumariza-ai
