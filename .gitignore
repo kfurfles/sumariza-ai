@@ -41,3 +41,5 @@ static/css/output.css
 # Node
 node_modules/
 .cursor/
+test-results
+coverage
