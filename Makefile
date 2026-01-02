@@ -53,7 +53,7 @@ test-cover:
 build: templ css
 	@go build -o bin/sumariza ./cmd/server
 
-build-server: templ css
+build-server: deps-server templ css
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
 
 # Docker build
