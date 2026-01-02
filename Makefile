@@ -11,6 +11,7 @@ dev: templ css
 deps:
 	@go mod download
 	@go install github.com/a-h/templ/cmd/templ@latest
+	npm i
 
 deps-server:
 	CGO_ENABLED=0
