@@ -1,3 +1,6 @@
+TEST_RESULTS_DIR := test-results
+COVERAGE_DIR := coverage
+
 .PHONY: dev test build docker run clean templ css deps
 
 # Development
@@ -24,6 +27,19 @@ css-watch:
 # Run tests
 test:
 	@go test ./... -v
+
+test-ci:
+	@mkdir -p $(TEST_RESULTS_DIR) $(COVERAGE_DIR)
+	@echo "Running unit tests with coverage..."
+	@gotestsum --junitfile $(TEST_RESULTS_DIR)/junit-unit.xml \
+		--format testname \
+		-- \
+		-coverprofile=$(COVERAGE_DIR)/coverage-unit.out \
+		-covermode=atomic \
+		-timeout 2m \
+		./...
+	@go tool cover -html=$(COVERAGE_DIR)/coverage-unit.out -o $(COVERAGE_DIR)/coverage-unit.html
+	@echo "Unit tests complete. Coverage report: $(COVERAGE_DIR)/coverage-unit.html"
 
 # Run tests with coverage
 test-cover:
