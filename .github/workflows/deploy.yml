@@ -52,12 +52,34 @@ jobs:
         run: |
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
 
+      - name: Verify SSH secrets are configured
+        run: |
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "ERROR: SSH_HOST secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then
+            echo "ERROR: SSH_USER secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "ERROR: SSH_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          echo "All SSH secrets are configured"
+          echo "SSH_HOST length: ${#SSH_HOST_VAL}"
+          echo "SSH_USER: ${{ secrets.SSH_USER }}"
+          echo "SSH_PRIVATE_KEY starts with: $(echo '${{ secrets.SSH_PRIVATE_KEY }}' | head -c 30)..."
+        env:
+          SSH_HOST_VAL: ${{ secrets.SSH_HOST }}
+
       - name: Deploy binary via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           source: "bin/sumariza-linux"
           target: ${{ env.DEPLOY_PATH }}
           strip_components: 1
@@ -68,6 +90,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           source: "config/"
           target: ${{ env.DEPLOY_PATH }}
 
@@ -77,6 +100,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           source: "static/"
           target: ${{ env.DEPLOY_PATH }}
 
@@ -86,6 +110,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           script: |
             mv ${{ env.DEPLOY_PATH }}/sumariza-linux ${{ env.DEPLOY_PATH }}/bin/sumariza
             chmod +x ${{ env.DEPLOY_PATH }}/bin/sumariza
