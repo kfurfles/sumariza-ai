@@ -1,0 +1,35 @@
+[Unit]
+Description=Sumariza AI - Twitter Content Scraper
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/sumariza-ai
+ExecStart=/var/www/sumariza-ai/bin/sumariza
+Restart=always
+RestartSec=5
+
+# Environment
+EnvironmentFile=/var/www/sumariza-ai/.env
+
+# Chrome/Chromium path - auto-detected during setup, stored in .env
+# If not in .env, common paths are tried by chromedp
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/sumariza-ai
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sumariza-ai
+
+[Install]
+WantedBy=multi-user.target
+

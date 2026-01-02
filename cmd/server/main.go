@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/joho/godotenv"
 
 	"sumariza-ai/internal/adapters/cache"
 	"sumariza-ai/internal/adapters/scraper"
@@ -17,6 +18,8 @@ import (
 )
 
 func main() {
+	// Load .env file if it exists (development only, ignored in production)
+	_ = godotenv.Load()
 	// Load selector configuration
 	selectors, err := scraper.LoadSelectors("config/selectors.yaml")
 	if err != nil {
@@ -82,4 +85,3 @@ func getCacheTTL() time.Duration {
 
 	return time.Duration(minutes) * time.Minute
 }
-

@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"log"
+	"os"
 	"sync"
 
 	"github.com/chromedp/chromedp"
@@ -19,6 +20,7 @@ type BrowserPool struct {
 }
 
 // NewBrowserPool creates a new browser pool with a headless Chrome instance.
+// Uses CHROME_PATH environment variable if set, otherwise uses default detection.
 func NewBrowserPool() (*BrowserPool, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
@@ -27,6 +29,12 @@ func NewBrowserPool() (*BrowserPool, error) {
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
+
+	// Use CHROME_PATH if set (useful for servers with non-standard Chrome/Chromium paths)
+	if chromePath := os.Getenv("CHROME_PATH"); chromePath != "" {
+		log.Printf("Using Chrome/Chromium from CHROME_PATH: %s", chromePath)
+		opts = append(opts, chromedp.ExecPath(chromePath))
+	}
 
 	bp := &BrowserPool{opts: opts}
 	if err := bp.start(); err != nil {

@@ -1,0 +1,73 @@
+# Deploy workflow - triggered on version tags
+# Builds the application and deploys to VPS via SSH
+
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  DEPLOY_PATH: /var/www/sumariza-ai
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          go mod download
+          go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templates
+        run: templ generate
+
+      - name: Build CSS
+        run: npx tailwindcss -i ./static/css/input.css -o ./static/css/output.css --minify
+
+      - name: Build for Linux
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        run: |
+          # Upload binary
+          scp -i ~/.ssh/deploy_key bin/sumariza-linux ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/bin/sumariza
+          
+          # Upload config and static files
+          scp -i ~/.ssh/deploy_key -r config/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/
+          scp -i ~/.ssh/deploy_key -r static/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_PATH }}/
+          
+          # Restart service
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "sudo systemctl restart sumariza-ai"
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "systemctl is-active sumariza-ai"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
