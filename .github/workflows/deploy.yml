@@ -58,6 +58,14 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          
+      - name: Debug SSH connection
+        run: |
+          echo "Testing SSH connection..."
+          echo "Key file exists: $(test -f ~/.ssh/deploy_key && echo 'yes' || echo 'no')"
+          echo "Key file permissions: $(ls -la ~/.ssh/deploy_key)"
+          echo "Key type: $(head -1 ~/.ssh/deploy_key)"
+          ssh -vvv -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=10 ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH OK'" || true
 
       - name: Deploy to server
         run: |
