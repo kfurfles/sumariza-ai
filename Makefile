@@ -12,6 +12,10 @@ deps:
 	@go mod download
 	@go install github.com/a-h/templ/cmd/templ@latest
 
+deps-server:
+	CGO_ENABLED=0
+	@go mod download
+	@go install github.com/a-h/templ/cmd/templ@latest
 # Generate Templ templates
 templ:
 	@templ generate
