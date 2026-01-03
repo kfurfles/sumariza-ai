@@ -104,16 +104,70 @@ jobs:
           source: "static/"
           target: ${{ env.DEPLOY_PATH }}
 
-      - name: Restart service via SSH
+      - name: Setup and restart service via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
+          envs: APP_PORT,CACHE_TTL_MINUTES,CHROME_PATH
           script: |
-            mv ${{ env.DEPLOY_PATH }}/sumariza-linux ${{ env.DEPLOY_PATH }}/bin/sumariza
-            chmod +x ${{ env.DEPLOY_PATH }}/bin/sumariza
-            sudo systemctl restart sumariza-ai
+            set -e
+            DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+            
+            # Move binary to final location
+            mkdir -p ${DEPLOY_PATH}/bin
+            mv ${DEPLOY_PATH}/sumariza-linux ${DEPLOY_PATH}/bin/sumariza
+            chmod +x ${DEPLOY_PATH}/bin/sumariza
+            
+            # Detect Chrome path if not provided
+            if [ -z "${CHROME_PATH}" ]; then
+              CHROME_PATH=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null || echo "/snap/bin/chromium")
+            fi
+            
+            # Always recreate .env file from secrets
+            echo "Creating .env file..."
+            cat > ${DEPLOY_PATH}/.env << EOF
+            PORT=${APP_PORT:-3000}
+            CACHE_TTL_MINUTES=${CACHE_TTL_MINUTES:-5}
+            CHROME_PATH=${CHROME_PATH}
+            EOF
+            chmod 600 ${DEPLOY_PATH}/.env
+            echo ".env created:"
+            cat ${DEPLOY_PATH}/.env
+            
+            # Install systemd service if not exists
+            if [ ! -f "/etc/systemd/system/sumariza-ai.service" ]; then
+              echo "Installing systemd service..."
+              cat > /etc/systemd/system/sumariza-ai.service << 'SERVICEEOF'
+            [Unit]
+            Description=Sumariza AI Service
+            After=network.target
+            
+            [Service]
+            Type=simple
+            User=root
+            WorkingDirectory=/var/www/sumariza-ai
+            ExecStart=/var/www/sumariza-ai/bin/sumariza
+            Restart=always
+            RestartSec=5
+            EnvironmentFile=/var/www/sumariza-ai/.env
+            
+            [Install]
+            WantedBy=multi-user.target
+            SERVICEEOF
+              systemctl daemon-reload
+              systemctl enable sumariza-ai
+              echo "Systemd service installed and enabled"
+            fi
+            
+            # Restart service
+            echo "Restarting service..."
+            systemctl restart sumariza-ai
             sleep 3
             systemctl is-active sumariza-ai
+        env:
+          APP_PORT: ${{ secrets.APP_PORT }}
+          CACHE_TTL_MINUTES: ${{ secrets.CACHE_TTL_MINUTES }}
+          CHROME_PATH: ${{ secrets.CHROME_PATH }}
