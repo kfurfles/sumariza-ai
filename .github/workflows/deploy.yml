@@ -52,26 +52,26 @@ jobs:
         run: |
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
 
-      - name: Verify SSH secrets are configured
+      - name: Setup SSH and verify connection
         run: |
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then
-            echo "ERROR: SSH_HOST secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.SSH_USER }}" ]; then
-            echo "ERROR: SSH_USER secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
-            echo "ERROR: SSH_PRIVATE_KEY secret is not set"
-            exit 1
-          fi
-          echo "All SSH secrets are configured"
-          echo "SSH_HOST length: ${#SSH_HOST_VAL}"
-          echo "SSH_USER: ${{ secrets.SSH_USER }}"
-          echo "SSH_PRIVATE_KEY starts with: $(echo '${{ secrets.SSH_PRIVATE_KEY }}' | head -c 30)..."
-        env:
-          SSH_HOST_VAL: ${{ secrets.SSH_HOST }}
+          # Create SSH directory
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          # Write the private key
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # Show key fingerprint (safe to display)
+          echo "Key fingerprint:"
+          ssh-keygen -lf ~/.ssh/deploy_key
+          
+          # Add host to known_hosts
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          
+          # Test SSH connection
+          echo "Testing SSH connection..."
+          ssh -v -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo 'SSH connection successful'"
 
       - name: Deploy binary via SCP
         uses: appleboy/scp-action@v0.1.7
