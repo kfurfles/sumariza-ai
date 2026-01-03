@@ -19,7 +19,6 @@ on:
 
 env:
   DEPLOY_PATH: /var/www/sumariza-ai
-  DOMAIN: sumariza-ai.com
 
 jobs:
   deploy:
@@ -186,53 +185,17 @@ jobs:
           CACHE_TTL_MINUTES: ${{ secrets.CACHE_TTL_MINUTES }}
           CHROME_PATH: ${{ secrets.CHROME_PATH }}
 
-      - name: Deploy Caddyfile template via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "deploy/Caddyfile.template"
-          target: "/tmp"
-          strip_components: 1
-
-      - name: Configure Caddy with Let's Encrypt
+      - name: Reload Caddy (if installed)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: DOMAIN
           script: |
-            set -e
-            
-            # Install Caddy if not present
-            if ! command -v caddy &> /dev/null; then
-              echo "Installing Caddy..."
-              apt-get update
-              apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-              apt-get update
-              apt-get install -y caddy
-              echo "Caddy installed"
+            if command -v caddy &> /dev/null && systemctl is-active caddy &> /dev/null; then
+              echo "Reloading Caddy..."
+              systemctl reload caddy
+              echo "Caddy reloaded"
+            else
+              echo "Caddy not running, skipping reload"
             fi
-            
-            # Create log directory
-            mkdir -p /var/log/caddy
-            chown caddy:caddy /var/log/caddy
-            
-            # Generate Caddyfile from template
-            echo "Configuring Caddy for domain: ${DOMAIN}"
-            sed "s/\${DOMAIN}/${DOMAIN}/g" /tmp/Caddyfile.template > /etc/caddy/Caddyfile
-            
-            # Validate Caddyfile
-            caddy validate --config /etc/caddy/Caddyfile
-            
-            # Reload Caddy
-            systemctl reload caddy || systemctl restart caddy
-            systemctl is-active caddy
-            
-            echo "Caddy configured for ${DOMAIN} with automatic HTTPS"
-        env:
-          DOMAIN: ${{ env.DOMAIN }}
