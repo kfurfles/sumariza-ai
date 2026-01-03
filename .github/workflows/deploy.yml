@@ -163,8 +163,23 @@ jobs:
             # Restart service
             echo "Restarting service..."
             systemctl restart sumariza-ai
-            sleep 3
-            systemctl is-active sumariza-ai
+            
+            # Wait for service to be fully active (max 30 seconds)
+            echo "Waiting for service to start..."
+            for i in {1..10}; do
+              STATUS=$(systemctl is-active sumariza-ai || true)
+              echo "Status check $i: $STATUS"
+              if [ "$STATUS" = "active" ]; then
+                echo "Service is active!"
+                exit 0
+              fi
+              sleep 3
+            done
+            
+            # If we get here, service failed to start
+            echo "Service failed to start properly"
+            journalctl -u sumariza-ai -n 20 --no-pager
+            exit 1
         env:
           APP_PORT: ${{ secrets.APP_PORT }}
           CACHE_TTL_MINUTES: ${{ secrets.CACHE_TTL_MINUTES }}
