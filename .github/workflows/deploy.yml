@@ -104,6 +104,16 @@ jobs:
           source: "static/"
           target: ${{ env.DEPLOY_PATH }}
 
+      - name: Deploy service file via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy/sumariza-ai.service"
+          target: "/tmp"
+          strip_components: 1
+
       - name: Setup and restart service via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -116,8 +126,10 @@ jobs:
             set -e
             DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
             
-            # Move binary to final location
+            # Create directory structure
             mkdir -p ${DEPLOY_PATH}/bin
+            
+            # Move binary to final location
             mv ${DEPLOY_PATH}/sumariza-linux ${DEPLOY_PATH}/bin/sumariza
             chmod +x ${DEPLOY_PATH}/bin/sumariza
             
@@ -137,30 +149,16 @@ jobs:
             echo ".env created:"
             cat ${DEPLOY_PATH}/.env
             
-            # Install systemd service if not exists
-            if [ ! -f "/etc/systemd/system/sumariza-ai.service" ]; then
-              echo "Installing systemd service..."
-              cat > /etc/systemd/system/sumariza-ai.service << 'SERVICEEOF'
-            [Unit]
-            Description=Sumariza AI Service
-            After=network.target
+            # Install/update systemd service from template
+            echo "Installing systemd service from template..."
+            cp /tmp/sumariza-ai.service /etc/systemd/system/sumariza-ai.service
             
-            [Service]
-            Type=simple
-            User=root
-            WorkingDirectory=/var/www/sumariza-ai
-            ExecStart=/var/www/sumariza-ai/bin/sumariza
-            Restart=always
-            RestartSec=5
-            EnvironmentFile=/var/www/sumariza-ai/.env
+            # Ensure www-data user exists and has permissions
+            id -u www-data &>/dev/null || useradd -r -s /bin/false www-data
+            chown -R www-data:www-data ${DEPLOY_PATH}
             
-            [Install]
-            WantedBy=multi-user.target
-            SERVICEEOF
-              systemctl daemon-reload
-              systemctl enable sumariza-ai
-              echo "Systemd service installed and enabled"
-            fi
+            systemctl daemon-reload
+            systemctl enable sumariza-ai
             
             # Restart service
             echo "Restarting service..."

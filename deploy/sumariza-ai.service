@@ -18,12 +18,12 @@ EnvironmentFile=/var/www/sumariza-ai/.env
 # Chrome/Chromium path - auto-detected during setup, stored in .env
 # If not in .env, common paths are tried by chromedp
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/www/sumariza-ai
-PrivateTmp=true
+# Security hardening (relaxed for Chromium headless)
+NoNewPrivileges=false
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/www/sumariza-ai /tmp
+PrivateTmp=false
 
 # Logging
 StandardOutput=journal
