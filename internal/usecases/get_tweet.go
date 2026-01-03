@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"sumariza-ai/internal/domain"
+	"sumariza-ai/pkg/log"
 )
 
 // TweetCache defines the interface for caching tweets.
@@ -30,8 +31,11 @@ func NewGetTweetUseCase(cache TweetCache, scraper *ScrapeTweetUseCase) *GetTweet
 func (uc *GetTweetUseCase) Execute(ctx context.Context, tweetID, username string) (*domain.Tweet, error) {
 	// Check cache first (key is normalized: /{username}/status/{id})
 	if tweet, found := uc.cache.Get(username, tweetID); found {
+		log.GlobalDebugCtx(ctx, "cache hit", "username", username, "tweet_id", tweetID)
 		return tweet, nil
 	}
+
+	log.GlobalDebugCtx(ctx, "cache miss, scraping", "username", username, "tweet_id", tweetID)
 
 	// Cache miss: scrape
 	tweet, err := uc.scraper.Execute(ctx, tweetID, username)

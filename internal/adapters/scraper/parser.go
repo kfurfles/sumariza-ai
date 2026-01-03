@@ -2,12 +2,12 @@ package scraper
 
 import (
 	"context"
-	"log"
 	"regexp"
 	"strings"
 	"time"
 
 	"sumariza-ai/internal/domain"
+	"sumariza-ai/pkg/log"
 
 	"github.com/chromedp/chromedp"
 )
@@ -46,6 +46,7 @@ func (s *TwitterScraper) Scrape(ctx context.Context, tweetID string) (*domain.Tw
 	})
 
 	if err != nil {
+		log.GlobalError("scrape failed", "tweet_id", tweetID, "error", err)
 		return nil, domain.ErrScrapingFailed
 	}
 
@@ -59,7 +60,7 @@ func (s *TwitterScraper) Scrape(ctx context.Context, tweetID string) (*domain.Tw
 	tweet.Partial = partial
 
 	if partial {
-		log.Printf("Tweet %s: partial data retrieved", tweetID)
+		log.GlobalDebug("partial data retrieved", "tweet_id", tweetID)
 	}
 
 	return tweet, nil

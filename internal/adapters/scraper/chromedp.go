@@ -2,9 +2,10 @@ package scraper
 
 import (
 	"context"
-	"log"
 	"os"
 	"sync"
+
+	"sumariza-ai/pkg/log"
 
 	"github.com/chromedp/chromedp"
 )
@@ -53,7 +54,7 @@ func NewBrowserPool(options []chromedp.ExecAllocatorOption) (*BrowserPool, error
 
 	// Explicit Chrome/Chromium path (systemd-safe)
 	if chromePath := os.Getenv("CHROME_PATH"); chromePath != "" {
-		log.Printf("BrowserPool: using CHROME_PATH=%s", chromePath)
+		log.GlobalInfo("browser pool using custom chrome path", "path", chromePath)
 		opts = append(opts, chromedp.ExecPath(chromePath))
 	}
 
@@ -91,7 +92,7 @@ func (bp *BrowserPool) start() error {
 	bp.ctx = ctx
 	bp.cancel = cancel
 
-	log.Println("BrowserPool: Chrome started successfully")
+	log.GlobalInfo("browser pool chrome started")
 	return nil
 }
 
@@ -127,7 +128,7 @@ func (bp *BrowserPool) acquireTab() (context.Context, context.CancelFunc, error)
 		// Cancel the failed tab before restart
 		tabCancel()
 
-		log.Printf("BrowserPool: tab failed, restarting Chrome: %v", err)
+		log.GlobalWarn("browser pool tab failed, restarting chrome", "error", err)
 
 		if restartErr := bp.start(); restartErr != nil {
 			return nil, nil, restartErr
@@ -149,6 +150,6 @@ func (bp *BrowserPool) Close() {
 
 	if bp.cancel != nil {
 		bp.cancel()
-		log.Println("BrowserPool: Chrome stopped")
+		log.GlobalInfo("browser pool chrome stopped")
 	}
 }

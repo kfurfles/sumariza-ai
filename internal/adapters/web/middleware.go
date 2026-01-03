@@ -4,7 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"sumariza-ai/pkg/log"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 )
 
 // RateLimiter tracks scrape requests per IP.
@@ -88,3 +91,73 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
+// RequestIDConfig returns the configuration for Fiber's requestid middleware.
+// Uses X-Request-ID header, generates UUID if not present.
+func RequestIDConfig() requestid.Config {
+	return requestid.Config{
+		Header:     "X-Request-ID",
+		ContextKey: "requestid",
+	}
+}
+
+// RequestIDToContextMiddleware bridges Fiber's requestid to pkg/log context.
+// Must be used AFTER requestid.New() middleware.
+func RequestIDToContextMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// Get request ID from Fiber's requestid middleware
+		reqID := c.Locals("requestid")
+		if reqID != nil {
+			if id, ok := reqID.(string); ok {
+				ctx := log.WithRequestID(c.UserContext(), id)
+				c.SetUserContext(ctx)
+			}
+		}
+		return c.Next()
+	}
+}
+
+// RequestLoggerMiddleware logs HTTP requests in structured JSON format.
+// Replaces Fiber's default logger middleware.
+// Must be used AFTER RequestIDToContextMiddleware.
+func RequestLoggerMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		start := time.Now()
+
+		// Process request
+		err := c.Next()
+
+		// Calculate latency
+		latency := time.Since(start)
+
+		// Get status code
+		status := c.Response().StatusCode()
+
+		// Determine log level based on status
+		ctx := c.UserContext()
+		fields := []any{
+			"method", c.Method(),
+			"path", c.Path(),
+			"status", status,
+			"latency_ms", latency.Milliseconds(),
+			"ip", c.IP(),
+			"user_agent", c.Get("User-Agent"),
+		}
+
+		// Add error if present
+		if err != nil {
+			fields = append(fields, "error", err.Error())
+		}
+
+		// Log based on status code
+		switch {
+		case status >= 500:
+			log.GlobalErrorCtx(ctx, "request completed", fields...)
+		case status >= 400:
+			log.GlobalWarnCtx(ctx, "request completed", fields...)
+		default:
+			log.GlobalInfoCtx(ctx, "request completed", fields...)
+		}
+
+		return err
+	}
+}

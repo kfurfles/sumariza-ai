@@ -2,9 +2,9 @@ package usecases
 
 import (
 	"context"
-	"log"
 
 	"sumariza-ai/internal/domain"
+	"sumariza-ai/pkg/log"
 )
 
 // TweetScraper defines the interface for scraping tweets.
@@ -35,7 +35,7 @@ func (uc *ScrapeTweetUseCase) Execute(ctx context.Context, tweetID, username str
 
 	// Log if partial data (for debugging)
 	if tweet.Partial {
-		log.Printf("Partial data for tweet %s: some optional fields missing", tweetID)
+		log.GlobalWarn("partial data retrieved", "tweet_id", tweetID)
 	}
 
 	return tweet, nil
