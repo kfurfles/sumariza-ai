@@ -121,7 +121,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
-          envs: APP_PORT,CACHE_TTL_MINUTES,CHROME_PATH
+          envs: APP_PORT,CACHE_TTL_MINUTES
           script: |
             set -e
             DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
@@ -133,17 +133,11 @@ jobs:
             mv ${DEPLOY_PATH}/sumariza-linux ${DEPLOY_PATH}/bin/sumariza
             chmod +x ${DEPLOY_PATH}/bin/sumariza
             
-            # Detect Chrome path if not provided
-            if [ -z "${CHROME_PATH}" ]; then
-              CHROME_PATH=$(which chromium 2>/dev/null || which chromium-browser 2>/dev/null || echo "/snap/bin/chromium")
-            fi
-            
             # Always recreate .env file from secrets
             echo "Creating .env file..."
             cat > ${DEPLOY_PATH}/.env << EOF
             PORT=${APP_PORT:-3000}
             CACHE_TTL_MINUTES=${CACHE_TTL_MINUTES:-5}
-            CHROME_PATH=${CHROME_PATH}
             EOF
             chmod 600 ${DEPLOY_PATH}/.env
             echo ".env created:"
@@ -183,5 +177,4 @@ jobs:
         env:
           APP_PORT: ${{ secrets.APP_PORT }}
           CACHE_TTL_MINUTES: ${{ secrets.CACHE_TTL_MINUTES }}
-          CHROME_PATH: ${{ secrets.CHROME_PATH }}
 

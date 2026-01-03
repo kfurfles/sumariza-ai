@@ -9,34 +9,58 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// BrowserPool manages a single persistent browser with multiple tabs.
-// Includes basic restart capability if browser crashes.
+// BrowserPool manages a single Chrome process and enforces
+// serialized tab usage (1 tab at a time).
+// Safe for 4GB VPS environments.
 type BrowserPool struct {
 	allocCtx context.Context
 	ctx      context.Context
 	cancel   context.CancelFunc
 	opts     []chromedp.ExecAllocatorOption
-	mu       sync.Mutex
+
+	mu     sync.Mutex
+	tabSem chan struct{}
 }
 
-// NewBrowserPool creates a new browser pool with a headless Chrome instance.
-// Uses CHROME_PATH environment variable if set, otherwise uses default detection.
+// NewBrowserPool creates a browser pool with exactly one Chrome instance
+// and one tab allowed at a time.
 func NewBrowserPool() (*BrowserPool, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		// Core
 		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		chromedp.Flag("disable-gpu", true),
+
+		// Memory / CPU reduction
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("disable-default-apps", true),
+		chromedp.Flag("disable-notifications", true),
+		chromedp.Flag("disable-translate", true),
+		chromedp.Flag("disable-component-update", true),
+		chromedp.Flag("disable-domain-reliability", true),
+		chromedp.Flag("disable-features", "Translate,BackForwardCache"),
+		chromedp.Flag("metrics-recording-only", true),
+		chromedp.Flag("mute-audio", true),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("single-process", true),
+		chromedp.Flag("disable-site-isolation-trials", true),
 	)
 
-	// Use CHROME_PATH if set (useful for servers with non-standard Chrome/Chromium paths)
+	// Explicit Chrome/Chromium path (systemd-safe)
 	if chromePath := os.Getenv("CHROME_PATH"); chromePath != "" {
-		log.Printf("Using Chrome/Chromium from CHROME_PATH: %s", chromePath)
+		log.Printf("BrowserPool: using CHROME_PATH=%s", chromePath)
 		opts = append(opts, chromedp.ExecPath(chromePath))
 	}
 
-	bp := &BrowserPool{opts: opts}
+	bp := &BrowserPool{
+		opts:   opts,
+		tabSem: make(chan struct{}, 1), // HARD LIMIT: 1 tab
+	}
+
 	if err := bp.start(); err != nil {
 		return nil, err
 	}
@@ -44,12 +68,19 @@ func NewBrowserPool() (*BrowserPool, error) {
 	return bp, nil
 }
 
-// start initializes or restarts the browser.
+// start initializes or restarts the Chrome process.
 func (bp *BrowserPool) start() error {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
+	if bp.cancel != nil {
+		bp.cancel()
+	}
+
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), bp.opts...)
 	ctx, _ := chromedp.NewContext(allocCtx)
 
-	// Start browser
+	// Force Chrome startup
 	if err := chromedp.Run(ctx); err != nil {
 		cancel()
 		return err
@@ -58,37 +89,65 @@ func (bp *BrowserPool) start() error {
 	bp.allocCtx = allocCtx
 	bp.ctx = ctx
 	bp.cancel = cancel
+
+	log.Println("BrowserPool: Chrome started successfully")
 	return nil
 }
 
-// NewTab creates a new browser tab and returns its context.
-// If the browser has crashed, it will attempt to restart.
-func (bp *BrowserPool) NewTab() (context.Context, context.CancelFunc) {
+// WithTab executes a function with exclusive access to a browser tab.
+// This guarantees:
+//   - one Chrome process
+//   - one tab at a time
+func (bp *BrowserPool) WithTab(fn func(ctx context.Context) error) error {
+	// Acquire tab slot (blocks until available)
+	bp.tabSem <- struct{}{}
+	defer func() { <-bp.tabSem }()
+
+	// Acquire a healthy tab (handles restart if needed)
+	tabCtx, tabCancel, err := bp.acquireTab()
+	if err != nil {
+		return err
+	}
+	defer tabCancel()
+
+	return fn(tabCtx)
+}
+
+// acquireTab creates a new browser tab and performs a health check.
+// If the browser is unhealthy, it restarts Chrome and creates a new tab.
+// Returns exactly one valid tab context with its cancel function.
+func (bp *BrowserPool) acquireTab() (context.Context, context.CancelFunc, error) {
+	bp.mu.Lock()
+	tabCtx, tabCancel := chromedp.NewContext(bp.ctx)
+	bp.mu.Unlock()
+
+	// Health check - verify the tab is functional
+	if err := chromedp.Run(tabCtx); err != nil {
+		// Cancel the failed tab before restart
+		tabCancel()
+
+		log.Printf("BrowserPool: tab failed, restarting Chrome: %v", err)
+
+		if restartErr := bp.start(); restartErr != nil {
+			return nil, nil, restartErr
+		}
+
+		// Create a new tab after restart
+		bp.mu.Lock()
+		tabCtx, tabCancel = chromedp.NewContext(bp.ctx)
+		bp.mu.Unlock()
+	}
+
+	return tabCtx, tabCancel, nil
+}
+
+// Close shuts down the browser completely.
+func (bp *BrowserPool) Close() {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 
-	tabCtx, tabCancel := chromedp.NewContext(bp.ctx)
-
-	// Basic health check - if browser is dead, restart it
-	if err := chromedp.Run(tabCtx); err != nil {
-		log.Printf("Browser pool: tab creation failed, attempting restart: %v", err)
-		tabCancel()
-
-		if restartErr := bp.start(); restartErr != nil {
-			log.Printf("Browser pool: restart failed: %v", restartErr)
-			return tabCtx, tabCancel // Return failed context
-		}
-
-		// Try again after restart
-		return chromedp.NewContext(bp.ctx)
-	}
-
-	return tabCtx, tabCancel
-}
-
-// Close shuts down the browser pool.
-func (bp *BrowserPool) Close() {
 	if bp.cancel != nil {
 		bp.cancel()
+		log.Println("BrowserPool: Chrome stopped")
 	}
 }

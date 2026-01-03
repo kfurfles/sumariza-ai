@@ -1,35 +1,50 @@
 [Unit]
 Description=Sumariza AI - Twitter Content Scraper
-After=network.target
+After=network.target network-online.target
 Wants=network-online.target
 
 [Service]
+# --- Processo ---
 Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/var/www/sumariza-ai
 ExecStart=/var/www/sumariza-ai/bin/sumariza
+
+# --- Restart policy ---
 Restart=always
 RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=10
 
-# Environment
+# --- Environment ---
 EnvironmentFile=/var/www/sumariza-ai/.env
 
-# Chrome/Chromium path - auto-detected during setup, stored in .env
-# If not in .env, common paths are tried by chromedp
+# Redirect HOME/XDG to writable, ephemeral location
+Environment=HOME=/tmp
+Environment=XDG_CONFIG_HOME=/tmp
+Environment=XDG_CACHE_HOME=/tmp
+Environment=XDG_DATA_HOME=/tmp
 
-# Security hardening (relaxed for Chromium headless)
+# --- Resource limits (VPS-safe) ---
+MemoryMax=1200M
+MemoryHigh=900M
+TasksMax=256
+LimitNPROC=1024
+LimitNOFILE=32768
+CPUQuota=50%
+
+# --- Security hardening (Chrome-friendly) ---
 NoNewPrivileges=false
+PrivateTmp=false
 ProtectSystem=full
 ProtectHome=read-only
 ReadWritePaths=/var/www/sumariza-ai /tmp
-PrivateTmp=false
 
-# Logging
+# --- Logging ---
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sumariza-ai
 
 [Install]
 WantedBy=multi-user.target
-

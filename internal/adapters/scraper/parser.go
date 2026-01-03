@@ -28,20 +28,23 @@ func NewTwitterScraper(pool *BrowserPool, selectors *SelectorConfig) *TwitterScr
 
 // Scrape fetches and parses a tweet from Twitter.
 func (s *TwitterScraper) Scrape(ctx context.Context, tweetID string) (*domain.Tweet, error) {
-	tabCtx, cancel := s.pool.NewTab()
-	defer cancel()
-
 	// Use /i/status/{id} format for scraping (doesn't require username)
 	url := "https://twitter.com/i/status/" + tweetID
 
 	var html string
+	var scrapeErr error
 
-	err := chromedp.Run(tabCtx,
-		chromedp.Navigate(url),
-		chromedp.WaitVisible(s.selectors.GetTweetContainer(), chromedp.ByQuery),
-		chromedp.WaitVisible(s.selectors.GetTweetText(), chromedp.ByQuery),
-		chromedp.OuterHTML("html", &html),
-	)
+	// Execute scraping with exclusive tab access (backpressure)
+	err := s.pool.WithTab(func(tabCtx context.Context) error {
+		scrapeErr = chromedp.Run(tabCtx,
+			chromedp.Navigate(url),
+			chromedp.WaitVisible(s.selectors.GetTweetContainer(), chromedp.ByQuery),
+			chromedp.WaitVisible(s.selectors.GetTweetText(), chromedp.ByQuery),
+			chromedp.OuterHTML("html", &html),
+		)
+		return scrapeErr
+	})
+
 	if err != nil {
 		return nil, domain.ErrScrapingFailed
 	}
