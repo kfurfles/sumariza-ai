@@ -2,7 +2,7 @@
 # Replace ${DOMAIN} with your actual domain before deploying
 # Caddy automatically handles HTTPS with Let's Encrypt
 
-${DOMAIN} {
+sumariza-ai.com {
     # Reverse proxy to the Go application
     reverse_proxy localhost:3000
 

@@ -185,17 +185,3 @@ jobs:
           CACHE_TTL_MINUTES: ${{ secrets.CACHE_TTL_MINUTES }}
           CHROME_PATH: ${{ secrets.CHROME_PATH }}
 
-      - name: Reload Caddy (if installed)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            if command -v caddy &> /dev/null && systemctl is-active caddy &> /dev/null; then
-              echo "Reloading Caddy..."
-              systemctl reload caddy
-              echo "Caddy reloaded"
-            else
-              echo "Caddy not running, skipping reload"
-            fi
