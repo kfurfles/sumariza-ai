@@ -121,7 +121,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
-          envs: APP_PORT,CACHE_TTL_MINUTES
+          envs: APP_PORT,CACHE_TTL_MINUTES,CHROME_PATH
           script: |
             set -e
             DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
@@ -177,4 +177,5 @@ jobs:
         env:
           APP_PORT: ${{ secrets.APP_PORT }}
           CACHE_TTL_MINUTES: ${{ secrets.CACHE_TTL_MINUTES }}
+          CHROME_PATH: ${{ secrets.CHROME_PATH }}
 
