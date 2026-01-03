@@ -42,6 +42,7 @@ func (e *Entry) With(keysAndValues ...any) *Entry {
 // MarshalJSON implements json.Marshaler for structured JSON output.
 // Fields are flattened into the root object.
 // Empty optional fields (caller, request_id) are omitted.
+// Error values are automatically converted to strings.
 func (e Entry) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 
@@ -57,10 +58,19 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 		m["request_id"] = e.RequestID
 	}
 
-	// Flatten fields into root
+	// Flatten fields into root, converting errors to strings
 	for k, v := range e.Fields {
-		m[k] = v
+		m[k] = normalizeValue(v)
 	}
 
 	return json.Marshal(m)
+}
+
+// normalizeValue converts special types to JSON-serializable values.
+// Errors are converted to their message string.
+func normalizeValue(v any) any {
+	if err, ok := v.(error); ok {
+		return err.Error()
+	}
+	return v
 }

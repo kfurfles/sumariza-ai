@@ -167,3 +167,40 @@ func TestEntry_With_OddNumberOfArgs_IgnoresLastKey(t *testing.T) {
 		t.Error("orphan key should not exist")
 	}
 }
+
+func TestEntry_MarshalJSON_ErrorFieldConvertsToString(t *testing.T) {
+	entry := Entry{
+		Timestamp: time.Now(),
+		Level:     Error,
+		Message:   "operation failed",
+		Fields:    map[string]any{"error": testError{"something went wrong"}},
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	// Error should be serialized as string, not empty object
+	errorVal, ok := result["error"].(string)
+	if !ok {
+		t.Errorf("error field should be string, got %T: %v", result["error"], result["error"])
+	}
+	if errorVal != "something went wrong" {
+		t.Errorf("error = %q, want %q", errorVal, "something went wrong")
+	}
+}
+
+// testError implements error interface for testing
+type testError struct {
+	msg string
+}
+
+func (e testError) Error() string {
+	return e.msg
+}
