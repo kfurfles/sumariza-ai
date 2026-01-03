@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -27,7 +28,11 @@ func main() {
 	}
 
 	// Initialize browser pool (single persistent browser)
-	browserPool, err := scraper.NewBrowserPool()
+	var options []chromedp.ExecAllocatorOption
+	if !getIsLocalEnv() {
+		options = append(options, chromedp.Flag("single-process", true))
+	}
+	browserPool, err := scraper.NewBrowserPool(options)
 	if err != nil {
 		log.Fatalf("Failed to initialize browser: %v", err)
 	}
@@ -84,4 +89,14 @@ func getCacheTTL() time.Duration {
 	}
 
 	return time.Duration(minutes) * time.Minute
+}
+
+func getIsLocalEnv() bool {
+	value := os.Getenv("IS_LOCAL")
+	if value == "1" {
+		log.Printf("Environment: LOCAL")
+		return true
+	}
+	log.Printf("Environment: PRODUCTION")
+	return false
 }

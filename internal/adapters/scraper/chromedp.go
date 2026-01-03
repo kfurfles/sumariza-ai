@@ -24,7 +24,7 @@ type BrowserPool struct {
 
 // NewBrowserPool creates a browser pool with exactly one Chrome instance
 // and one tab allowed at a time.
-func NewBrowserPool() (*BrowserPool, error) {
+func NewBrowserPool(options []chromedp.ExecAllocatorOption) (*BrowserPool, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		// Core
 		chromedp.Flag("headless", true),
@@ -46,9 +46,10 @@ func NewBrowserPool() (*BrowserPool, error) {
 		chromedp.Flag("metrics-recording-only", true),
 		chromedp.Flag("mute-audio", true),
 		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("single-process", true),
 		chromedp.Flag("disable-site-isolation-trials", true),
 	)
+
+	opts = append(opts, options...)
 
 	// Explicit Chrome/Chromium path (systemd-safe)
 	if chromePath := os.Getenv("CHROME_PATH"); chromePath != "" {
