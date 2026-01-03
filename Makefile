@@ -2,6 +2,14 @@ TEST_RESULTS_DIR := test-results
 COVERAGE_DIR := coverage
 
 # Load deploy config if exists
+# Create .env.deploy with:
+#   SSH_HOST=your-server.com
+#   SSH_USER=root
+#   SSH_PORT=22
+#   DEPLOY_PATH=/var/www/sumariza-ai
+#   APP_PORT=3000
+#   CACHE_TTL_MINUTES=5
+#   CHROME_PATH=/usr/bin/chromium-browser
 -include .env.deploy
 export
 
@@ -67,7 +75,7 @@ build: templ css
 	@go build -o bin/sumariza ./cmd/server
 
 build-server: deps-server templ css
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza ./cmd/server
 
 # Docker build
 docker:
@@ -90,28 +98,76 @@ clean:
 # Build binary for Linux (cross-compilation)
 build-linux: templ css
 	@echo "Building for Linux amd64..."
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
-	@echo "Built: bin/sumariza-linux"
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza ./cmd/server
+	@echo "Built: bin/sumariza"
 
 # Deploy application (build + upload + restart)
+# Mirrors the GitHub Actions deploy workflow - uploads to /tmp then moves with sudo
 deploy: build-linux
 	@echo "Deploying to $(SSH_HOST)..."
-	@scp -P $(SSH_PORT) bin/sumariza-linux $(SSH_USER)@$(SSH_HOST):$(DEPLOY_PATH)/bin/sumariza
-	@scp -P $(SSH_PORT) -r config/ $(SSH_USER)@$(SSH_HOST):$(DEPLOY_PATH)/
-	@scp -P $(SSH_PORT) -r static/ $(SSH_USER)@$(SSH_HOST):$(DEPLOY_PATH)/
-	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "sudo systemctl restart sumariza-ai"
+	@echo "Preparing staging area..."
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "rm -rf /tmp/sumariza-deploy && mkdir -p /tmp/sumariza-deploy"
+	@echo "Uploading files..."
+	@scp -P $(SSH_PORT) bin/sumariza $(SSH_USER)@$(SSH_HOST):/tmp/sumariza-deploy/
+	@scp -P $(SSH_PORT) -r config $(SSH_USER)@$(SSH_HOST):/tmp/sumariza-deploy/
+	@scp -P $(SSH_PORT) -r static $(SSH_USER)@$(SSH_HOST):/tmp/sumariza-deploy/
+	@scp -P $(SSH_PORT) deploy/sumariza-ai.service $(SSH_USER)@$(SSH_HOST):/tmp/sumariza-deploy/
+	@echo "Installing files and restarting service..."
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "\
+		sudo mkdir -p $(DEPLOY_PATH)/bin && \
+		sudo mv /tmp/sumariza-deploy/sumariza $(DEPLOY_PATH)/bin/sumariza && \
+		sudo chmod +x $(DEPLOY_PATH)/bin/sumariza && \
+		sudo rm -rf $(DEPLOY_PATH)/config && \
+		sudo mv /tmp/sumariza-deploy/config $(DEPLOY_PATH)/config && \
+		sudo rm -rf $(DEPLOY_PATH)/static && \
+		sudo mv /tmp/sumariza-deploy/static $(DEPLOY_PATH)/static && \
+		sudo cp /tmp/sumariza-deploy/sumariza-ai.service /etc/systemd/system/sumariza-ai.service && \
+		sudo chown -R www-data:www-data $(DEPLOY_PATH) && \
+		sudo systemctl daemon-reload && \
+		sudo systemctl enable sumariza-ai && \
+		sudo systemctl restart sumariza-ai && \
+		rm -rf /tmp/sumariza-deploy && \
+		sleep 3 && \
+		sudo systemctl is-active sumariza-ai"
 	@echo "Deploy complete!"
 
-# Initial server setup
+# Initial server setup (creates .env and base structure)
 deploy-setup:
 	@echo "Running initial setup on $(SSH_HOST)..."
-	@scp -P $(SSH_PORT) -r deploy/ $(SSH_USER)@$(SSH_HOST):/tmp/sumariza-deploy/
-	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "cd /tmp/sumariza-deploy && DOMAIN=$(DOMAIN) DEPLOY_PATH=$(DEPLOY_PATH) bash setup.sh"
-	@echo "Setup complete! Now run: make deploy"
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "\
+		mkdir -p $(DEPLOY_PATH)/bin && \
+		id -u www-data &>/dev/null || sudo useradd -r -s /bin/false www-data && \
+		sudo chown -R www-data:www-data $(DEPLOY_PATH)"
+	@echo "Setup complete!"
+	@echo ""
+	@echo "IMPORTANT: Create .env file on server:"
+	@echo "  ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST)"
+	@echo "  sudo nano $(DEPLOY_PATH)/.env"
+	@echo ""
+	@echo "Add these variables:"
+	@echo "  PORT=3000"
+	@echo "  CACHE_TTL_MINUTES=5"
+	@echo "  CHROME_PATH=/usr/bin/chromium-browser"
+	@echo ""
+	@echo "Then run: make deploy"
+
+# Update .env file on server
+deploy-env:
+ifndef APP_PORT
+	$(error APP_PORT is not set. Usage: make deploy-env APP_PORT=3000 CACHE_TTL_MINUTES=5 CHROME_PATH=/usr/bin/chromium-browser)
+endif
+	@echo "Updating .env on $(SSH_HOST)..."
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "\
+		echo 'PORT=$(APP_PORT)' | sudo tee $(DEPLOY_PATH)/.env > /dev/null && \
+		echo 'CACHE_TTL_MINUTES=$(CACHE_TTL_MINUTES)' | sudo tee -a $(DEPLOY_PATH)/.env > /dev/null && \
+		echo 'CHROME_PATH=$(CHROME_PATH)' | sudo tee -a $(DEPLOY_PATH)/.env > /dev/null && \
+		sudo chmod 600 $(DEPLOY_PATH)/.env && \
+		sudo chown www-data:www-data $(DEPLOY_PATH)/.env"
+	@echo ".env updated!"
 
 # View application logs
 deploy-logs:
-	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "journalctl -u sumariza-ai -f"
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "sudo journalctl -u sumariza-ai -f"
 
 # SSH into server
 deploy-ssh:
@@ -119,5 +175,9 @@ deploy-ssh:
 
 # Check service status
 deploy-status:
-	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "systemctl status sumariza-ai"
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "sudo systemctl status sumariza-ai"
+
+# Quick restart without redeploy
+deploy-restart:
+	@ssh -p $(SSH_PORT) $(SSH_USER)@$(SSH_HOST) "sudo systemctl restart sumariza-ai && sleep 2 && sudo systemctl is-active sumariza-ai"
 

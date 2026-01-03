@@ -31,29 +31,121 @@ func (s *TwitterScraper) Scrape(ctx context.Context, tweetID string) (*domain.Tw
 	// Use /i/status/{id} format for scraping (doesn't require username)
 	url := "https://twitter.com/i/status/" + tweetID
 
+	log.GlobalDebug("scrape starting", "tweet_id", tweetID, "url", url)
+	startTime := time.Now()
+
 	var html string
-	var scrapeErr error
 
 	// Execute scraping with exclusive tab access (backpressure)
-	err := s.pool.WithTab(func(tabCtx context.Context) error {
-		scrapeErr = chromedp.Run(tabCtx,
-			chromedp.Navigate(url),
-			chromedp.WaitVisible(s.selectors.GetTweetContainer(), chromedp.ByQuery),
-			chromedp.WaitVisible(s.selectors.GetTweetText(), chromedp.ByQuery),
-			chromedp.OuterHTML("html", &html),
-		)
-		return scrapeErr
+	// Using WithTabCtx to properly propagate context cancellation/timeout
+	err := s.pool.WithTabCtx(ctx, func(tabCtx context.Context) error {
+		// Step 1: Navigate to the URL
+		log.GlobalDebug("scrape step: navigating", "tweet_id", tweetID)
+		navStart := time.Now()
+		if err := chromedp.Run(tabCtx, chromedp.Navigate(url)); err != nil {
+			log.GlobalError("scrape navigation failed",
+				"tweet_id", tweetID,
+				"error", err,
+				"duration_ms", time.Since(navStart).Milliseconds())
+			return err
+		}
+		log.GlobalDebug("scrape step: navigation complete",
+			"tweet_id", tweetID,
+			"duration_ms", time.Since(navStart).Milliseconds())
+
+		// Check context before continuing
+		if tabCtx.Err() != nil {
+			log.GlobalWarn("scrape context canceled after navigation",
+				"tweet_id", tweetID,
+				"error", tabCtx.Err())
+			return tabCtx.Err()
+		}
+
+		// Step 2: Wait for tweet container
+		log.GlobalDebug("scrape step: waiting for container", "tweet_id", tweetID)
+		containerStart := time.Now()
+		containerSelector := s.selectors.GetTweetContainer()
+		if err := chromedp.Run(tabCtx, chromedp.WaitVisible(containerSelector, chromedp.ByQuery)); err != nil {
+			log.GlobalError("scrape wait container failed",
+				"tweet_id", tweetID,
+				"selector", containerSelector,
+				"error", err,
+				"duration_ms", time.Since(containerStart).Milliseconds())
+			return err
+		}
+		log.GlobalDebug("scrape step: container visible",
+			"tweet_id", tweetID,
+			"duration_ms", time.Since(containerStart).Milliseconds())
+
+		// Check context before continuing
+		if tabCtx.Err() != nil {
+			log.GlobalWarn("scrape context canceled after container wait",
+				"tweet_id", tweetID,
+				"error", tabCtx.Err())
+			return tabCtx.Err()
+		}
+
+		// Step 3: Wait for tweet text
+		log.GlobalDebug("scrape step: waiting for text", "tweet_id", tweetID)
+		textStart := time.Now()
+		textSelector := s.selectors.GetTweetText()
+		if err := chromedp.Run(tabCtx, chromedp.WaitVisible(textSelector, chromedp.ByQuery)); err != nil {
+			log.GlobalError("scrape wait text failed",
+				"tweet_id", tweetID,
+				"selector", textSelector,
+				"error", err,
+				"duration_ms", time.Since(textStart).Milliseconds())
+			return err
+		}
+		log.GlobalDebug("scrape step: text visible",
+			"tweet_id", tweetID,
+			"duration_ms", time.Since(textStart).Milliseconds())
+
+		// Check context before continuing
+		if tabCtx.Err() != nil {
+			log.GlobalWarn("scrape context canceled after text wait",
+				"tweet_id", tweetID,
+				"error", tabCtx.Err())
+			return tabCtx.Err()
+		}
+
+		// Step 4: Extract HTML
+		log.GlobalDebug("scrape step: extracting html", "tweet_id", tweetID)
+		htmlStart := time.Now()
+		if err := chromedp.Run(tabCtx, chromedp.OuterHTML("html", &html)); err != nil {
+			log.GlobalError("scrape html extraction failed",
+				"tweet_id", tweetID,
+				"error", err,
+				"duration_ms", time.Since(htmlStart).Milliseconds())
+			return err
+		}
+		log.GlobalDebug("scrape step: html extracted",
+			"tweet_id", tweetID,
+			"html_length", len(html),
+			"duration_ms", time.Since(htmlStart).Milliseconds())
+
+		return nil
 	})
 
 	if err != nil {
-		log.GlobalError("scrape failed", "tweet_id", tweetID, "error", err)
+		log.GlobalError("scrape failed",
+			"tweet_id", tweetID,
+			"error", err,
+			"total_duration_ms", time.Since(startTime).Milliseconds())
 		return nil, domain.ErrScrapingFailed
 	}
+
+	log.GlobalDebug("scrape complete, parsing html",
+		"tweet_id", tweetID,
+		"total_duration_ms", time.Since(startTime).Milliseconds())
 
 	tweet, partial := s.parseHTML(html, tweetID)
 
 	// Text is essential - fail if not found
 	if tweet.Content.Text == "" {
+		log.GlobalError("scrape text not found in html",
+			"tweet_id", tweetID,
+			"html_length", len(html))
 		return nil, domain.ErrTextNotFound
 	}
 
@@ -62,6 +154,11 @@ func (s *TwitterScraper) Scrape(ctx context.Context, tweetID string) (*domain.Tw
 	if partial {
 		log.GlobalDebug("partial data retrieved", "tweet_id", tweetID)
 	}
+
+	log.GlobalInfo("scrape success",
+		"tweet_id", tweetID,
+		"partial", partial,
+		"total_duration_ms", time.Since(startTime).Milliseconds())
 
 	return tweet, nil
 }
@@ -214,12 +311,17 @@ func preserveLinks(html string) string {
 	})
 }
 
-// stripHTMLKeepLinks removes HTML tags but preserves our link markers and converts line breaks.
+// stripHTMLKeepLinks removes HTML tags but preserves our link markers, emojis, and converts line breaks.
 func stripHTMLKeepLinks(html string) string {
 	// Convert line break elements to newlines BEFORE removing tags
 	html = regexp.MustCompile(`<br\s*/?\s*>`).ReplaceAllString(html, "\n")
 	html = regexp.MustCompile(`</div>`).ReplaceAllString(html, "\n")
 	html = regexp.MustCompile(`</p>`).ReplaceAllString(html, "\n")
+
+	// Preserve emojis from <img alt="emoji"> tags (Twitter renders emojis as images)
+	// Replace <img alt="X" ...> with the alt text (emoji)
+	emojiRe := regexp.MustCompile(`<img[^>]*alt="([^"]*)"[^>]*>`)
+	html = emojiRe.ReplaceAllString(html, "$1")
 
 	// Remove remaining HTML tags
 	re := regexp.MustCompile(`<[^>]*>`)
@@ -369,9 +471,43 @@ func cleanTextPreserveNewlines(text string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
-// stripHTML removes HTML tags from a string.
+// stripHTML removes HTML tags from a string, preserving emoji alt text.
 func stripHTML(html string) string {
+	// Preserve emojis from <img alt="emoji"> tags (Twitter renders emojis as images)
+	emojiRe := regexp.MustCompile(`<img[^>]*alt="([^"]*)"[^>]*>`)
+	html = emojiRe.ReplaceAllString(html, "$1")
+
+	// Remove remaining HTML tags
 	re := regexp.MustCompile(`<[^>]*>`)
 	text := re.ReplaceAllString(html, "")
 	return cleanText(text)
+}
+
+// extractHasVideo checks if the tweet contains a video.
+// Twitter uses data-testid="videoPlayer" or "videoComponent" for videos.
+func extractHasVideo(html string) bool {
+	return strings.Contains(html, `data-testid="videoPlayer"`) ||
+		strings.Contains(html, `data-testid="videoComponent"`)
+}
+
+// extractImages extracts image URLs from the tweet.
+// Twitter uses data-testid="tweetPhoto" for images.
+func extractImages(html string) []string {
+	if !strings.Contains(html, `data-testid="tweetPhoto"`) {
+		return nil
+	}
+
+	// Find image URLs within tweetPhoto containers
+	// Twitter uses <img src="..."> inside these containers
+	re := regexp.MustCompile(`data-testid="tweetPhoto"[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"`)
+	matches := re.FindAllStringSubmatch(html, -1)
+
+	var images []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			images = append(images, match[1])
+		}
+	}
+
+	return images
 }

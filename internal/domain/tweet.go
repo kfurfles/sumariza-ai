@@ -5,12 +5,12 @@ import "time"
 
 // Tweet represents a single Twitter/X post.
 type Tweet struct {
-	ID        string
-	URL       string  // Original Twitter URL
-	Username  string  // Extracted from input URL
-	Author    Author
-	Content   Content
-	Partial   bool    // True if some optional data is missing
+	ID       string
+	URL      string // Original Twitter URL
+	Username string // Extracted from input URL
+	Author   Author
+	Content  Content
+	Partial  bool // True if some optional data is missing
 }
 
 // Author represents the tweet author's information.
@@ -56,4 +56,3 @@ const (
 	LTR TextDirection = "ltr"
 	RTL TextDirection = "rtl"
 )
-

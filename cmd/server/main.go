@@ -37,9 +37,9 @@ func main() {
 
 	// Initialize browser pool (single persistent browser)
 	var options []chromedp.ExecAllocatorOption
-	if !getIsLocalEnv() {
-		options = append(options, chromedp.Flag("single-process", true))
-	}
+	// if !getIsLocalEnv() {
+	// 	options = append(options, chromedp.Flag("single-process", true))
+	// }
 	browserPool, err := scraper.NewBrowserPool(options)
 	if err != nil {
 		log.GlobalFatal("failed to initialize browser", "error", err)

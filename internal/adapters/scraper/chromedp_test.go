@@ -30,6 +30,23 @@ func (bp *TestBrowserPool) WithTab(fn func(ctx context.Context) error) error {
 	return fn(context.Background())
 }
 
+// WithTabCtx is like WithTab but respects context cancellation while waiting for semaphore.
+// The context is also propagated to the callback function.
+func (bp *TestBrowserPool) WithTabCtx(ctx context.Context, fn func(ctx context.Context) error) error {
+	// Wait for semaphore while respecting context cancellation
+	select {
+	case bp.tabSem <- struct{}{}:
+		// Acquired semaphore
+	case <-ctx.Done():
+		// Context canceled while waiting
+		return ctx.Err()
+	}
+	defer func() { <-bp.tabSem }()
+
+	// Propagate the context to the callback
+	return fn(ctx)
+}
+
 // --- Tests for backpressure behavior ---
 
 func TestWithTab_Backpressure_OnlyOneAtATime(t *testing.T) {
@@ -261,5 +278,133 @@ func TestNewBrowserPool_SemaphoreCapacity(t *testing.T) {
 	// Assert
 	if acquired != 1 {
 		t.Errorf("should only acquire once, got %d", acquired)
+	}
+}
+
+// --- Tests for context cancellation ---
+
+func TestWithTab_ContextCanceled_WhileWaitingForSemaphore(t *testing.T) {
+	// Arrange
+	pool := NewTestBrowserPool(1)
+
+	// Hold the semaphore to force second call to wait
+	pool.tabSem <- struct{}{}
+
+	// Create a context that will be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Act - Try to acquire while semaphore is held
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- pool.WithTabCtx(ctx, func(tabCtx context.Context) error {
+			return nil
+		})
+	}()
+
+	// Cancel the context after a short delay
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	// Assert - Should return context.Canceled error
+	select {
+	case err := <-errChan:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Error("WithTabCtx should have returned after context cancellation")
+	}
+
+	// Cleanup - release semaphore
+	<-pool.tabSem
+}
+
+func TestWithTab_ContextDeadlineExceeded_WhileWaitingForSemaphore(t *testing.T) {
+	// Arrange
+	pool := NewTestBrowserPool(1)
+
+	// Hold the semaphore to force second call to wait
+	pool.tabSem <- struct{}{}
+
+	// Create a context with a short timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	// Act - Try to acquire while semaphore is held
+	err := pool.WithTabCtx(ctx, func(tabCtx context.Context) error {
+		return nil
+	})
+
+	// Assert - Should return context.DeadlineExceeded
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded, got: %v", err)
+	}
+
+	// Cleanup - release semaphore
+	<-pool.tabSem
+}
+
+func TestWithTab_ContextCanceled_DuringExecution(t *testing.T) {
+	// Arrange
+	pool := NewTestBrowserPool(1)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Act - Start execution, cancel during work
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- pool.WithTabCtx(ctx, func(tabCtx context.Context) error {
+			// Simulate long work that checks context
+			select {
+			case <-tabCtx.Done():
+				return tabCtx.Err()
+			case <-time.After(1 * time.Second):
+				return nil
+			}
+		})
+	}()
+
+	// Cancel after work starts
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	// Assert - Should return context.Canceled
+	select {
+	case err := <-errChan:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Error("WithTabCtx should have returned after context cancellation")
+	}
+}
+
+func TestWithTab_ContextPropagated_ToFunction(t *testing.T) {
+	// Arrange
+	pool := NewTestBrowserPool(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var receivedCtx context.Context
+
+	// Act
+	err := pool.WithTabCtx(ctx, func(tabCtx context.Context) error {
+		receivedCtx = tabCtx
+		return nil
+	})
+
+	// Assert
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// The received context should have the same deadline as the parent
+	deadline, ok := ctx.Deadline()
+	receivedDeadline, receivedOk := receivedCtx.Deadline()
+
+	if ok != receivedOk {
+		t.Errorf("deadline presence mismatch: parent=%v, received=%v", ok, receivedOk)
+	}
+	if ok && !deadline.Equal(receivedDeadline) {
+		t.Errorf("deadline mismatch: parent=%v, received=%v", deadline, receivedDeadline)
 	}
 }

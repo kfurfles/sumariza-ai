@@ -50,7 +50,7 @@ jobs:
 
       - name: Build for Linux
         run: |
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza-linux ./cmd/server
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/sumariza ./cmd/server
 
       - name: Setup SSH and verify connection
         run: |
@@ -80,7 +80,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
-          source: "bin/sumariza-linux"
+          source: "bin/sumariza"
           target: ${{ env.DEPLOY_PATH }}
           strip_components: 1
 
@@ -130,7 +130,7 @@ jobs:
             mkdir -p ${DEPLOY_PATH}/bin
             
             # Move binary to final location
-            mv ${DEPLOY_PATH}/sumariza-linux ${DEPLOY_PATH}/bin/sumariza
+            mv ${DEPLOY_PATH}/sumariza ${DEPLOY_PATH}/bin/sumariza
             chmod +x ${DEPLOY_PATH}/bin/sumariza
             
             # Always recreate .env file from secrets
